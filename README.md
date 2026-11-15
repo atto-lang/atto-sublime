@@ -31,3 +31,21 @@ This is a statement of intended scope, not a claim of completed implementation o
 AttoLang is the public name; preserve existing Oreslang/.ores compatibility and use canonical .atto for new portable library source. This README defines scope, not feature readiness.
 
 **Acceptance:** name exact source SHA/tree, runtime/toolchain, positive and negative checks and execution receipt before claiming support. Host-only tests and empty CI steps do not prove guest execution.
+
+## Lexical Sublime Text syntax (draft)
+
+The standalone `AttoLang.sublime-syntax` registers `.atto` and `.ores`
+and highlights receiver `mtd`, `pure fnc`, control flow, effects, symbols,
+strings, pipelines and nested comments. This is a lexical grammar, not a
+parser or proof of compiler/backend support. Contextual spellings such as
+`critical-read` remain non-reserved.
+
+For a portable structural smoke test:
+
+```sh
+python -m pip install -r requirements-dev.txt
+python -m unittest discover -s tests
+```
+
+Sublime Text's native syntax engine and extension packaging require
+separate verification before release.
