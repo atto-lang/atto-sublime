@@ -1,0 +1,92 @@
+%YAML 1.2
+---
+name: AttoLang (preview)
+file_extensions:
+  - atto
+  - ores
+scope: source.atto
+contexts:
+  main:
+    - include: comments
+    - include: symbols
+    - include: strings
+    - match: '(?<![A-Za-z0-9_-])(?:critical-read|critical-write|nb-select)(?![A-Za-z0-9_-])'
+      scope: keyword.control.atto
+    - match: '\b(?:define|import|export|pub|module|class|actor|struct|trait|interface|fnc|mtd|method|extends|implements)\b'
+      scope: keyword.declaration.atto
+    - match: '\b(?:if|ifnot|unless|then|else|fi|match|over|switch|select|do|end|return|recur|loop|for|while|break|continue|try|catch|recover|throw|raise|panic|trap|await|spawn|suspends|readch|writech)\b'
+      scope: keyword.control.atto
+    - match: '\b(?:rt|borrow|take|copy|share|mut|val|let|const|final|as|is|of|in)\b'
+      scope: storage.modifier.atto
+    - match: '\b(?:true|false|null|none)\b'
+      scope: constant.language.atto
+    - match: '\b(?:int|float|bool|str|String|Symbol|Option|Result|Array|List|Tuple)\b'
+      scope: support.type.atto
+    - match: '\b[0-9]+(?:\.[0-9]+)?\b'
+      scope: constant.numeric.atto
+    - match: '(?:\|>|->|=>|\?\?|==|!=|<=|>=|&&|\|\||\^\^|[+*/=<>!?])'
+      scope: keyword.operator.atto
+
+  comments:
+    - match: '//.*$'
+      scope: comment.line.double-slash.atto
+    - match: '/\*'
+      scope: punctuation.definition.comment.begin.atto
+      push: block_comment
+  block_comment:
+    - meta_scope: comment.block.atto
+    - match: '/\*'
+      push: block_comment
+    - match: '\*/'
+      pop: true
+
+  symbols:
+    - match: '#"'
+      scope: punctuation.definition.symbol.begin.atto
+      push: double_symbol
+    - match: "#'"
+      scope: punctuation.definition.symbol.begin.atto
+      push: single_symbol
+    - match: '#[A-Za-z_][A-Za-z0-9_]*'
+      scope: constant.other.symbol.atto
+  double_symbol:
+    - meta_scope: constant.other.symbol.atto
+    - match: '\\.'
+      scope: constant.character.escape.atto
+    - match: '"'
+      pop: true
+  single_symbol:
+    - meta_scope: constant.other.symbol.atto
+    - match: '\\.'
+      scope: constant.character.escape.atto
+    - match: "'"
+      pop: true
+
+  strings:
+    - match: '"'
+      scope: punctuation.definition.string.begin.atto
+      push: double_quoted
+    - match: "'"
+      scope: punctuation.definition.string.begin.atto
+      push: single_quoted
+    - match: '`'
+      scope: punctuation.definition.string.begin.atto
+      push: template
+  double_quoted:
+    - meta_scope: string.quoted.double.atto
+    - match: '\\.'
+      scope: constant.character.escape.atto
+    - match: '"'
+      pop: true
+  single_quoted:
+    - meta_scope: string.quoted.single.atto
+    - match: '\\.'
+      scope: constant.character.escape.atto
+    - match: "'"
+      pop: true
+  template:
+    - meta_scope: string.quoted.template.atto
+    - match: '\\.'
+      scope: constant.character.escape.atto
+    - match: '`'
+      pop: true
