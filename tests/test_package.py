@@ -1,0 +1,261 @@
+import importlib.util
+import json
+import pathlib
+import subprocess
+import tempfile
+import sys
+import types
+import unittest
+
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
+class PackageContractTest(unittest.TestCase):
+    def test_requested_keywords_share_one_scope(self):
+        syntax = (ROOT / "Oreslang.sublime-syntax").read_text()
+        requested = {
+            "pub", "fnc", "void", "class", "module", "return", "if", "else",
+            "elif", "fi", "case", "match", "switch", "try", "catch", "select",
+        }
+        keyword_line = next(
+            line for line in syntax.splitlines() if line.strip().startswith("keywords:")
+        )
+        for keyword in requested:
+            self.assertIn(keyword, keyword_line)
+        self.assertIn("scope: keyword.oreslang", syntax)
+
+    def test_new_compiler_constructs_are_highlighted(self):
+        syntax = (ROOT / "Oreslang.sublime-syntax").read_text()
+        keyword_line = next(
+            line for line in syntax.splitlines() if line.strip().startswith("keywords:")
+        )
+        names = set(keyword_line.split("(?:", 1)[1].split(")", 1)[0].split("|"))
+        for keyword in ("do", "match", "over", "select", "nb", "case",
+                        "readch", "writech", "while", "const", "val", "let", "mut"):
+            self.assertIn(keyword, names)
+
+    def test_global_controls_are_separate(self):
+        syntax = (ROOT / "Oreslang.sublime-syntax").read_text()
+        global_line = next(
+            line for line in syntax.splitlines()
+            if line.strip().startswith("global_controls:")
+        )
+        for name in ("recover", "defer", "throw", "raise"):
+            self.assertIn(name, global_line)
+        self.assertIn("scope: support.function.global.oreslang", syntax)
+
+    def test_json_resources_parse(self):
+        for name in (
+            "Default.sublime-commands",
+            "Oreslang.sublime-build",
+            "Oreslang.sublime-settings",
+            "Main.sublime-menu",
+        ):
+            with self.subTest(name=name):
+                json.loads((ROOT / name).read_text())
+
+    def test_editor_commands_use_canonical_oreslang_cli(self):
+        build = json.loads((ROOT / "Oreslang.sublime-build").read_text())
+        settings = json.loads((ROOT / "Oreslang.sublime-settings").read_text())
+        self.assertEqual(["oreslang", "check", "$file"], build["cmd"])
+        self.assertEqual(
+            ["oreslang", "check", "--format=json", "$file"],
+            settings["cli_command"],
+        )
+        self.assertNotIn("ores", build["cmd"])
+        self.assertNotIn("ores", settings["cli_command"])
+
+    def test_automatic_cli_execution_is_opt_in(self):
+        settings = json.loads((ROOT / "Oreslang.sublime-settings").read_text())
+        self.assertFalse(settings["diagnostics_on_save"])
+        self.assertFalse(settings["diagnostics_on_change"])
+
+    def test_isolated_actor_and_template_scopes(self):
+        syntax = (ROOT / "Oreslang.sublime-syntax").read_text()
+        self.assertIn("isolated", syntax)
+        self.assertIn("critical", syntax)
+        self.assertIn("suspends", syntax)
+        self.assertIn("string.quoted.template.oreslang", syntax)
+        # Lexer recognition is not parser acceptance or deprecation proof.
+        self.assertIn("isoactor", syntax)
+        self.assertIn("null|", syntax)
+        self.assertIn("panic", syntax)
+        self.assertIn("cpu|gpu", syntax)
+        self.assertIn("%=&|^", syntax)
+
+    def test_plugin_python_compiles(self):
+        source = (ROOT / "oreslang.py").read_text()
+        compile(source, str(ROOT / "oreslang.py"), "exec")
+
+
+class DiagnosticParserTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        sublime = types.ModuleType("sublime")
+        sublime.DRAW_SQUIGGLY_UNDERLINE = 1
+        sublime.DRAW_NO_FILL = 2
+        sublime_plugin = types.ModuleType("sublime_plugin")
+        sublime_plugin.TextCommand = type("TextCommand", (), {})
+        sublime_plugin.EventListener = type("EventListener", (), {})
+        sys.modules["sublime"] = sublime
+        sys.modules["sublime_plugin"] = sublime_plugin
+
+        spec = importlib.util.spec_from_file_location(
+            "oreslang_plugin_under_test", ROOT / "oreslang.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        cls.plugin = module
+
+    def test_command_placeholder_expansion_is_atomic_and_nonrecursive(self):
+        class Settings:
+            def get(self, key, default=None):
+                if key == "cli_command":
+                    return ["oreslang", "$file", "$file_path", "$file_name",
+                            "$project", "$project_path", "$file_extra"]
+                return default
+
+        class Window:
+            def project_file_name(self):
+                return "/tmp/source/workspace.sublime-project"
+
+        class View:
+            def file_name(self):
+                return "/tmp/dir$project/sample.ores"
+
+            def window(self):
+                return Window()
+
+        original = self.plugin._settings
+        self.plugin._settings = lambda: Settings()
+        try:
+            command = self.plugin._expand_command(View())
+        finally:
+            self.plugin._settings = original
+
+        self.assertEqual([
+            "oreslang", "/tmp/dir$project/sample.ores", "/tmp/dir$project",
+            "sample.ores", "/tmp/source/workspace.sublime-project",
+            "/tmp/source", "$file_extra"
+        ], command)
+
+    def test_malformed_json_diagnostics_do_not_crash_or_corrupt_positions(self):
+        payload = {
+            "version": 1,
+            "diagnostics": [
+                {"message": "not a record", "range": [1, 2]},
+                {"message": "bad range", "range": {"start": "x"}},
+                {"message": "NaN", "range": {"start": {"line": "NaN"}}},
+                {"message": "negative", "range": {"start": {"line": -1}}},
+                {"message": "infinity", "range": {"start": {"line": 1e99}}},
+                {"message": "boolean", "range": {"start": {"column": True}}},
+                {"message": "bad end", "range": {"start": {"line": 7, "column": 3},
+                    "end": {"line": 6, "column": 2}}},
+                {"message": "valid multiline", "path": None,
+                 "severity": "unknown", "range": {
+                     "start": {"line": 7, "column": 20},
+                     "end": {"line": 8, "column": 2}}},
+            ],
+        }
+        records = self.plugin._parse_diagnostics(json.dumps(payload), "/tmp/fallback.ores")
+        self.assertEqual(1, len(records))
+        self.assertEqual("valid multiline", records[0]["message"])
+        self.assertEqual(7, records[0]["line"])
+        self.assertEqual(20, records[0]["column"])
+        self.assertEqual(8, records[0]["end_line"])
+        self.assertEqual(2, records[0]["end_column"])
+        self.assertEqual("error", records[0]["severity"])
+        self.assertEqual("/tmp/fallback.ores", records[0]["file"])
+        self.assertEqual([], self.plugin._parse_diagnostics(
+            json.dumps({"version": 1, "diagnostics": None}), "/tmp/a.ores"))
+
+    def test_oreslang_cli_json_diagnostic(self):
+        items = self.plugin._parse_diagnostics(
+            json.dumps(
+                {
+                    "version": 1,
+                    "ok": False,
+                    "diagnostics": [
+                        {
+                            "version": 1,
+                            "path": "/tmp/demo.ores",
+                            "range": {
+                                "start": {"line": 8, "column": 4},
+                                "end": {"line": 8, "column": 5},
+                            },
+                            "severity": "error",
+                            "message": "unknown binding",
+                        }
+                    ],
+                }
+            ),
+            "/tmp/demo.ores",
+        )
+        self.assertEqual(1, len(items))
+        self.assertEqual("/tmp/demo.ores", items[0]["file"])
+        self.assertEqual(8, items[0]["line"])
+        self.assertEqual(4, items[0]["column"])
+        self.assertEqual(8, items[0]["end_line"])
+        self.assertEqual(5, items[0]["end_column"])
+        self.assertEqual("unknown binding", items[0]["message"])
+
+    def test_relative_compiler_diagnostic_paths_are_relative_to_active_file(self):
+        source = "/tmp/project/main.ores"
+        records = self.plugin._parse_diagnostics(json.dumps({
+            "version": 1,
+            "diagnostics": [{"path": "src/dependency.ores", "message": "invalid"}]
+        }), source)
+        self.assertEqual("/tmp/project/src/dependency.ores", records[0]["file"])
+        plain = self.plugin._parse_diagnostics(
+            "src/dependency.ores:2:3: error: invalid", source)
+        self.assertEqual("/tmp/project/src/dependency.ores", plain[0]["file"])
+
+    def test_plain_text_coordinates_have_the_same_bounded_admission(self):
+        for row, col in [('0','1'),('1','0'),('10000001','2'),('2','10000001'),
+                         ('9'*5000,'1'),('1','9'*5000),('١','1')]:
+            for prefix in ('/tmp/demo.ores:{0}:{1}: error: bad',
+                           'Oreslang parse error at {0}:{1}: bad'):
+                self.assertEqual([], self.plugin._parse_diagnostics(prefix.format(row,col), '/tmp/a.ores'))
+
+    def test_machine_version_cannot_be_a_boolean_float_or_string(self):
+        for version in (True, 1.0, '1'):
+            output=json.dumps({'version':version,'diagnostics':[
+                {'line':2,'message':'Oreslang parse error at 2:3: unsupported version'}]})
+            self.assertEqual([],self.plugin._parse_diagnostics(output,'/tmp/a.ores'))
+
+    def test_live_compiler_output_is_bounded_on_both_pipes(self):
+        with tempfile.TemporaryDirectory() as cwd:
+            for fd in (1, 2):
+                with self.subTest(fd=fd), self.assertRaisesRegex(RuntimeError, 'output budget'):
+                    self.plugin._run_compiler_bounded(
+                        [sys.executable, '-c', f"import os;os.write({fd},b'x'*2000000)"], cwd, 3, max_bytes=32768)
+            result = self.plugin._run_compiler_bounded(
+                [sys.executable, '-c', "import sys;print('diagnostic');print('warning',file=sys.stderr);sys.exit(1)"], cwd, 3)
+            self.assertEqual((result.returncode, result.stdout, result.stderr), (1, 'diagnostic\n', 'warning\n'))
+            with self.assertRaises(subprocess.TimeoutExpired):
+                self.plugin._run_compiler_bounded([sys.executable, '-c', 'import time;time.sleep(10)'], cwd, 0.1)
+
+    def test_standard_diagnostic(self):
+        items = self.plugin._parse_diagnostics(
+            "/tmp/demo.ores:7:11: error: expected expression", "/tmp/demo.ores"
+        )
+        self.assertEqual(1, len(items))
+        self.assertEqual(7, items[0]["line"])
+        self.assertEqual(11, items[0]["column"])
+        self.assertEqual("expected expression", items[0]["message"])
+
+    def test_native_parser_diagnostic(self):
+        items = self.plugin._parse_diagnostics(
+            "java.lang.IllegalArgumentException: "
+            "Oreslang parse error at 4:9: expected expression",
+            "/tmp/demo.ores",
+        )
+        self.assertEqual(1, len(items))
+        self.assertEqual("/tmp/demo.ores", items[0]["file"])
+        self.assertEqual(4, items[0]["line"])
+        self.assertEqual(9, items[0]["column"])
+
+
+if __name__ == "__main__":
+    unittest.main()
