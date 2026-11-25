@@ -1,0 +1,92 @@
+%YAML 1.2
+---
+name: AttoLang
+file_extensions:
+  - atto
+  - ores
+scope: source.atto
+contexts:
+  main:
+    - include: comments
+    - include: symbols
+    - include: strings
+    - match: '(?<![\p{L}\p{N}_])nb-select(?![\p{L}\p{N}_-])'
+      scope: keyword.concurrency.atto
+    - match: '(?<![\p{L}\p{N}_])(?:define|import|impl|def)(?![\p{L}\p{N}_])'
+      scope: keyword.declaration.atto
+    - match: '(?<![\p{L}\p{N}_])(?:generator|interface|namespace|contract|isoactor|routine|module|struct|actor|class|trait|type|mtd|fnc)(?![\p{L}\p{N}_])'
+      scope: keyword.entity.atto
+    - match: '(?<![\p{L}\p{N}_])(?:suspends|async|pure|recover|defer|panic|raise|throw|trap|try|catch|finally)(?![\p{L}\p{N}_])'
+      scope: keyword.effect.atto
+    - match: '(?<![\p{L}\p{N}_])(?:return|match|switch|select|while|yield|done|else|elif|end|for|loop|fi|if|do|guard)(?![\p{L}\p{N}_])'
+      scope: keyword.control.atto
+    - match: '(?<![\p{L}\p{N}_])(?:val|let)(?![\p{L}\p{N}_])'
+      scope: keyword.binding.atto
+    - match: '(?<![\p{L}\p{N}_])(?:mut|pub|const|static|private)(?![\p{L}\p{N}_])'
+      scope: storage.modifier.atto
+    - match: '(?<![\p{L}\p{N}_])(?:self|super)(?![\p{L}\p{N}_])'
+      scope: variable.language.atto
+    - match: '(?<![\p{L}\p{N}_])(?:spawn|await|stop|rt|readch|writech)(?![\p{L}\p{N}_])'
+      scope: keyword.concurrency.atto
+    - match: '(?<![\p{L}\p{N}_])(?:false|true|null|void)(?![\p{L}\p{N}_])'
+      scope: constant.language.atto
+    - match: '\|>'
+      scope: keyword.operator.pipeline.atto
+  comments:
+    - match: '//'
+      scope: punctuation.definition.comment.atto
+      push:
+        - meta_scope: comment.line.double-slash.atto
+        - match: '$'
+          pop: true
+    - match: '/\*'
+      scope: punctuation.definition.comment.atto
+      push: block-comment
+  block-comment:
+    - meta_scope: comment.block.atto
+    - match: '/\*'
+      push: block-comment
+    - match: '\*/'
+      pop: true
+  symbols:
+    - match: '#[A-Za-z_][A-Za-z0-9_]*'
+      scope: constant.other.symbol.atto
+    - match: '#"'
+      push:
+        - meta_scope: constant.other.symbol.quoted.atto
+        - match: '\\.'
+          scope: constant.character.escape.atto
+        - match: '"'
+          pop: true
+    - match: "#'"
+      push:
+        - meta_scope: constant.other.symbol.quoted.atto
+        - match: '\\.'
+          scope: constant.character.escape.atto
+        - match: "'"
+          pop: true
+  strings:
+    - match: '"'
+      push: double-quoted
+    - match: "'"
+      push: single-quoted
+    - match: '`'
+      push: template-quoted
+  double-quoted:
+    - meta_scope: string.quoted.double.atto
+    - match: '\\.'
+      scope: constant.character.escape.atto
+    - match: '"'
+      pop: true
+  single-quoted:
+    - meta_scope: string.quoted.single.atto
+    - match: '\\.'
+      scope: constant.character.escape.atto
+    - match: "'"
+      pop: true
+  template-quoted:
+    - meta_scope: string.quoted.template.atto
+    - match: '\\.'
+      scope: constant.character.escape.atto
+    - match: '`'
+      pop: true
