@@ -12,7 +12,9 @@ contexts:
     - include: strings
     - match: '(?<![A-Za-z0-9_-])(?:critical-read|critical-write|nb-select)(?![A-Za-z0-9_-])'
       scope: keyword.control.atto
-    - match: '\b(?:define|import|export|pub|module|class|actor|struct|trait|interface|fnc|mtd|method|extends|implements)\b'
+    - match: '(?<![\w.])mtd(?=[ \t]+(?:[^\W\d]\w*[ \t]*(?:\(|<[^<>\r\n]+>[ \t]*\()|\[Symbol\.[^\W\d]\w*\][ \t]*\(|\([^()\r\n]*\)[ \t]+[^\W\d]\w*[ \t]*(?:\(|<[^<>\r\n]+>[ \t]*\()))'
+      scope: keyword.declaration.atto
+    - match: '\b(?:define|import|export|pub|module|class|actor|struct|trait|interface|fnc|extends|implements)\b'
       scope: keyword.declaration.atto
     - match: '\b(?:if|ifnot|unless|then|else|fi|match|over|switch|select|do|end|return|recur|loop|for|while|break|continue|try|catch|recover|throw|raise|panic|trap|await|spawn|suspends|readch|writech)\b'
       scope: keyword.control.atto
