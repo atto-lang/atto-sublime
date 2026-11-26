@@ -47,6 +47,17 @@ class GrammarSmokeTests(unittest.TestCase):
         self.assertIsNotNone(ctrl.search("nb-select"))
         self.assertIsNone(ctrl.search("my-critical-read-extra"))
 
+    def test_contextual_mtd_only(self):
+        decl = scoped_regex("keyword.declaration.atto")
+        for source in ("mtd answer()", "mtd method()", "mtd mtd()", "mtd id<T>()",
+                       "mtd (C self) answer()", "mtd [Symbol.iterator]()"):
+            with self.subTest(source=source):
+                self.assertEqual(decl.search(source).group(), "mtd")
+        for source in ("method answer()", "method()", "mtd()", "mtd (value)",
+                       "x.mtd()", "mtd value;", "mtd List<int> value;", "some_mtd foo()"):
+            with self.subTest(source=source):
+                self.assertIsNone(decl.search(source))
+
     def test_literals_and_ownership(self):
         self.assertIsNotNone(scoped_regex("storage.modifier.atto").search("rt borrow mut value"))
         self.assertIsNotNone(scoped_regex("constant.numeric.atto").search("3.14"))
